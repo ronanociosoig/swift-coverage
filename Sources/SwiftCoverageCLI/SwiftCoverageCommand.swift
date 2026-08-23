@@ -1,0 +1,96 @@
+import ArgumentParser
+import Foundation
+import SwiftCoverageCore
+
+@main
+struct SwiftCoverageCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "swift-coverage",
+        abstract: "Requires every branch of a Swift package's logic to be exercised by its test suite.",
+        discussion: """
+            Unlike a line/statement coverage percentage, swift-coverage checks each individual \
+            branch of your code's logic \u{2014} every if/else, guard, switch case, loop, catch \
+            clause, and ternary/?? alternative \u{2014} and fails if any of them was never reached \
+            by `swift test`. A percentage can hide one critical, never-exercised path behind a lot \
+            of well-tested boilerplate; this doesn't.
+
+            Plain data types need no special treatment: a declaration with no branching logic \
+            (a stored property, a struct's memberwise fields) is never required to be covered \
+            in the first place, because it never becomes a logic unit to begin with.
+
+            Mark an intentionally-untested declaration or branch with a comment:
+              // swift-coverage:ignore          (directly above a func/init/property)
+              // swift-coverage:ignore-branch   (directly above an if/guard/case/catch/loop, \
+            or above the statement containing a ternary/??)
+              // swift-coverage:ignore-file     (as the first line of a file)
+            """,
+        version: "0.1.0"
+    )
+
+    @Argument(help: "Path to the Swift package to analyze.")
+    var path: String = "."
+
+    @Option(help: "Output format: text or json.")
+    var format: OutputFormat = .text
+
+    @Flag(help: "Reuse an existing coverage export instead of running `swift test` again.")
+    var skipTests: Bool = false
+
+    @Option(help: "Coverage export JSON to use with --skip-tests, instead of asking SwiftPM for its path.")
+    var coverageJson: String?
+
+    @Option(help: "Glob (relative to the package root) to restrict analysis to. Repeatable.")
+    var include: [String] = []
+
+    @Option(help: "Glob (relative to the package root) to exclude from analysis. Repeatable.")
+    var exclude: [String] = []
+
+    @Option(name: .customLong("filter"), help: "Passed through to `swift test --filter`.")
+    var testFilter: String?
+
+    @Flag(help: "Report uncovered logic paths without failing the command.")
+    var noFail: Bool = false
+
+    @Flag(help: "Also list files that had no branching logic (and so needed no coverage).")
+    var verbose: Bool = false
+
+    enum OutputFormat: String, ExpressibleByArgument {
+        case text
+        case json
+    }
+
+    func run() throws {
+        let analyzer = SwiftCoverageAnalyzer(packagePath: path, include: include, exclude: exclude)
+
+        let report: AnalysisReport
+        do {
+            if skipTests {
+                guard let jsonPath = try coverageJson ?? analyzer.discoverExistingCoverageJSONPath() else {
+                    throw SwiftCoverageError.coverageDataUnavailable
+                }
+                report = try analyzer.analyzeUsingExistingCoverage(jsonPath: jsonPath)
+            } else {
+                var extraArgs: [String] = []
+                if let testFilter { extraArgs += ["--filter", testFilter] }
+                report = try analyzer.analyzeWithFreshTestRun(extraTestArguments: extraArgs)
+            }
+        } catch let error as SwiftCoverageError {
+            FileHandle.standardError.write(Data(((error.errorDescription ?? "Unknown error") + "\n").utf8))
+            if case .testsFailed = error {
+                throw ExitCode(2)
+            }
+            throw ExitCode(3)
+        }
+
+        switch format {
+        case .text:
+            print(TextReporter.render(report, verbose: verbose))
+        case .json:
+            print(try JSONReporter.render(report))
+        }
+
+        if !report.passes, !noFail {
+            throw ExitCode(1)
+        }
+    }
+}
