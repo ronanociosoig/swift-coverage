@@ -15,8 +15,9 @@ It's built for use in an agentic SDLC: a coding agent can run `swift-coverage` a
 tests and get a deterministic pass/fail plus a machine-readable list of exactly which logic paths
 still need a test — not a percentage it has to interpret.
 
-Built with [SwiftSyntax](https://github.com/swiftlang/swift-syntax) and
-[swift-argument-parser](https://github.com/apple/swift-argument-parser), following the shape of
+Built with [SwiftSyntax](https://github.com/swiftlang/swift-syntax),
+[swift-argument-parser](https://github.com/apple/swift-argument-parser), and the
+[MCP Swift SDK](https://github.com/modelcontextprotocol/swift-sdk), following the shape of
 [fummicc1/swift-complexity](https://github.com/fummicc1/swift-complexity) as a starting point.
 
 ## Install
@@ -26,6 +27,7 @@ git clone <this repo>
 cd swift-coverage
 swift build -c release
 cp .build/release/swift-coverage /usr/local/bin/
+cp .build/release/swift-coverage-mcp /usr/local/bin/   # only if you want the MCP server too
 ```
 
 ## Usage
@@ -134,6 +136,38 @@ struct that's excluded automatically. From this repo root:
 swift build -c release
 .build/release/swift-coverage Examples/DemoPackage
 ```
+
+## MCP server
+
+`swift-coverage-mcp` exposes the same analysis over the
+[Model Context Protocol](https://modelcontextprotocol.io) (stdio transport), for agents and
+editors that call tools through MCP rather than a shell. It's a thin wrapper — same
+`SwiftCoverageCore` library, same coverage matching — over three tools:
+
+| Tool | Runs tests? | Returns |
+|---|---|---|
+| `check_coverage` | yes (unless `skip_tests`) | The full report: `passes`, every logic unit, every branch's covered/suppressed state. |
+| `list_uncovered_branches` | yes (unless `skip_tests`) | Just the branches still needing a test — file, line, unit, label. |
+| `list_logic_units` | no | Every logic unit and its branches, parsed from source only — for previewing what a change will require coverage for. |
+
+All three take `path` (required), plus `include`/`exclude` globs; the two that run tests also
+take `skip_tests` and `test_filter`. `check_coverage` additionally takes `format` (`json` or
+`text`).
+
+Register it with an MCP client by pointing it at the built binary, e.g. in Claude Code's
+`.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "swift-coverage": { "command": "/usr/local/bin/swift-coverage-mcp" }
+  }
+}
+```
+
+`check_coverage`/`list_uncovered_branches` calls are serialized process-wide (`CoverageRunGate`):
+MCP dispatches tool calls concurrently, and two overlapping `swift test --enable-code-coverage`
+runs against the same package would otherwise race on SwiftPM's shared `.build` state.
 
 ## CI
 

@@ -24,7 +24,7 @@ struct SwiftCoverageCommand: ParsableCommand {
             or above the statement containing a ternary/??)
               // swift-coverage:ignore-file     (as the first line of a file)
             """,
-        version: "0.1.0"
+        version: SwiftCoverageVersion.current
     )
 
     @Argument(help: "Path to the Swift package to analyze.")

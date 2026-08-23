@@ -15,10 +15,15 @@ let package = Package(
             name: "swift-coverage",
             targets: ["SwiftCoverageCLI"]
         ),
+        .executable(
+            name: "swift-coverage-mcp",
+            targets: ["SwiftCoverageMCP"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
     ],
     targets: [
         .target(
@@ -37,6 +42,14 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             path: "Sources/SwiftCoverageCLI"
+        ),
+        .executableTarget(
+            name: "SwiftCoverageMCP",
+            dependencies: [
+                "SwiftCoverageCore",
+                .product(name: "MCP", package: "swift-sdk"),
+            ],
+            path: "Sources/SwiftCoverageMCP"
         ),
         .testTarget(
             name: "SwiftCoverageCoreTests",

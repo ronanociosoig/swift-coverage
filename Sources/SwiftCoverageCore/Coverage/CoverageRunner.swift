@@ -48,8 +48,9 @@ public struct CoverageRunner {
         process.currentDirectoryURL = URL(fileURLWithPath: packagePath)
 
         let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
-        process.standardError = streamOutput ? stdoutPipe : Pipe()
+        process.standardError = stderrPipe
 
         var collected = Data()
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -60,10 +61,22 @@ public struct CoverageRunner {
                 FileHandle.standardOutput.write(chunk)
             }
         }
+        // Both pipes must be drained regardless of `streamOutput`: `swift
+        // test`'s build output routinely exceeds the OS pipe buffer, and an
+        // unread pipe (stderr, previously) makes the child block on its next
+        // write forever — hanging `waitUntilExit()` right along with it.
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            if streamOutput {
+                FileHandle.standardError.write(chunk)
+            }
+        }
 
         try process.run()
         process.waitUntilExit()
         stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
 
         let output = String(data: collected, encoding: .utf8) ?? ""
         return (process.terminationStatus, output)
