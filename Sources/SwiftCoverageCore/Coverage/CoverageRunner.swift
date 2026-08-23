@@ -7,6 +7,10 @@ import Foundation
 /// (whose output is streamed live) actually runs the suite and drives
 /// coverage instrumentation; `--show-codecov-path` only prints the path
 /// SwiftPM wrote the export to, without re-running anything.
+///
+/// Only plain SwiftPM packages can be tested this way. A package that's
+/// iOS-only, or otherwise can't be built by a bare `swift test` on macOS,
+/// needs `XcodeCoverageRunner` instead.
 public struct CoverageRunner {
     public var packagePath: String
     public var extraTestArguments: [String]
@@ -24,8 +28,10 @@ public struct CoverageRunner {
     }
 
     public func run(streamOutput: Bool = true) throws -> Result {
-        let testRun = try runProcess(
+        let testRun = try ProcessRunner.run(
+            tool: swiftExecutable,
             arguments: ["test", "--enable-code-coverage"] + extraTestArguments,
+            currentDirectory: URL(fileURLWithPath: packagePath),
             streamOutput: streamOutput
         )
         return Result(testsPassed: testRun.exitCode == 0, coverageJSONPath: try discoverCoverageJSONPath())
@@ -35,50 +41,13 @@ public struct CoverageRunner {
     /// JSON, without running the test suite. Used for `--skip-tests`, and
     /// internally by `run()` right after a fresh test run.
     public func discoverCoverageJSONPath() throws -> String? {
-        let pathRun = try runProcess(arguments: ["test", "--show-codecov-path"], streamOutput: false)
+        let pathRun = try ProcessRunner.run(
+            tool: swiftExecutable,
+            arguments: ["test", "--show-codecov-path"],
+            currentDirectory: URL(fileURLWithPath: packagePath),
+            streamOutput: false
+        )
         let path = pathRun.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         return FileManager.default.fileExists(atPath: path) ? path : nil
-    }
-
-    @discardableResult
-    private func runProcess(arguments: [String], streamOutput: Bool) throws -> (exitCode: Int32, stdout: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [swiftExecutable] + arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: packagePath)
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        var collected = Data()
-        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            guard !chunk.isEmpty else { return }
-            collected.append(chunk)
-            if streamOutput {
-                FileHandle.standardOutput.write(chunk)
-            }
-        }
-        // Both pipes must be drained regardless of `streamOutput`: `swift
-        // test`'s build output routinely exceeds the OS pipe buffer, and an
-        // unread pipe (stderr, previously) makes the child block on its next
-        // write forever — hanging `waitUntilExit()` right along with it.
-        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            guard !chunk.isEmpty else { return }
-            if streamOutput {
-                FileHandle.standardError.write(chunk)
-            }
-        }
-
-        try process.run()
-        process.waitUntilExit()
-        stdoutPipe.fileHandleForReading.readabilityHandler = nil
-        stderrPipe.fileHandleForReading.readabilityHandler = nil
-
-        let output = String(data: collected, encoding: .utf8) ?? ""
-        return (process.terminationStatus, output)
     }
 }

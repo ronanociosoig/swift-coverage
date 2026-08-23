@@ -36,7 +36,43 @@ enum ToolDefinitions {
 
     private static let testFilterProperty: Value = .object([
         "type": .string("string"),
-        "description": .string("Passed through to `swift test --filter` (ignored when skip_tests is true)."),
+        "description": .string(
+            "Passed through to `swift test --filter`, or (with scheme set) to `xcodebuild -only-testing:`. "
+                + "Ignored when skip_tests is true."
+        ),
+    ])
+
+    private static let schemeProperty: Value = .object([
+        "type": .string("string"),
+        "description": .string(
+            "Xcode scheme to test via `xcodebuild` instead of `swift test` \u{2014} for a package that's "
+                + "iOS-only or otherwise can't be built by a bare `swift test` on macOS. Requires destination."
+        ),
+    ])
+
+    private static let destinationProperty: Value = .object([
+        "type": .string("string"),
+        "description": .string(
+            "xcodebuild destination, e.g. 'platform=iOS Simulator,name=iPhone 17'. Required when scheme is set."
+        ),
+    ])
+
+    private static let xcodeProjectProperty: Value = .object([
+        "type": .string("string"),
+        "description": .string("Explicit .xcodeproj path, passed to xcodebuild -project. Omit to auto-detect."),
+    ])
+
+    private static let xcodeWorkspaceProperty: Value = .object([
+        "type": .string("string"),
+        "description": .string("Explicit .xcworkspace path, passed to xcodebuild -workspace."),
+    ])
+
+    private static let derivedDataPathProperty: Value = .object([
+        "type": .string("string"),
+        "description": .string(
+            "Derived data path for a scheme run, so its Coverage.profdata can be found afterward. "
+                + "Defaults to <path>/.build/swift-coverage-xcode."
+        ),
     ])
 
     static let checkCoverage = Tool(
@@ -61,6 +97,11 @@ enum ToolDefinitions {
                 "exclude": excludeProperty,
                 "skip_tests": skipTestsProperty,
                 "test_filter": testFilterProperty,
+                "scheme": schemeProperty,
+                "destination": destinationProperty,
+                "xcode_project": xcodeProjectProperty,
+                "xcode_workspace": xcodeWorkspaceProperty,
+                "derived_data_path": derivedDataPathProperty,
                 "format": .object([
                     "type": .string("string"),
                     "enum": .array([.string("json"), .string("text")]),
@@ -87,6 +128,11 @@ enum ToolDefinitions {
                 "exclude": excludeProperty,
                 "skip_tests": skipTestsProperty,
                 "test_filter": testFilterProperty,
+                "scheme": schemeProperty,
+                "destination": destinationProperty,
+                "xcode_project": xcodeProjectProperty,
+                "xcode_workspace": xcodeWorkspaceProperty,
+                "derived_data_path": derivedDataPathProperty,
             ]),
         ])
     )

@@ -10,6 +10,11 @@ enum CoverageRequest {
         var exclude: [String]
         var skipTests: Bool
         var testFilter: String?
+        var scheme: String?
+        var destination: String?
+        var xcodeProject: String?
+        var xcodeWorkspace: String?
+        var derivedDataPath: String?
     }
 
     static func parse(_ arguments: [String: Value]?) -> Arguments? {
@@ -19,25 +24,48 @@ enum CoverageRequest {
             include: ParamExtractor.stringArray("include", from: arguments) ?? [],
             exclude: ParamExtractor.stringArray("exclude", from: arguments) ?? [],
             skipTests: ParamExtractor.bool("skip_tests", from: arguments),
-            testFilter: ParamExtractor.string("test_filter", from: arguments)
+            testFilter: ParamExtractor.string("test_filter", from: arguments),
+            scheme: ParamExtractor.string("scheme", from: arguments),
+            destination: ParamExtractor.string("destination", from: arguments),
+            xcodeProject: ParamExtractor.string("xcode_project", from: arguments),
+            xcodeWorkspace: ParamExtractor.string("xcode_workspace", from: arguments),
+            derivedDataPath: ParamExtractor.string("derived_data_path", from: arguments)
         )
     }
 
     static func buildReport(_ args: Arguments) throws -> AnalysisReport {
         let analyzer = SwiftCoverageAnalyzer(packagePath: args.path, include: args.include, exclude: args.exclude)
+
         if args.skipTests {
             guard let jsonPath = try analyzer.discoverExistingCoverageJSONPath() else {
                 throw SwiftCoverageError.coverageDataUnavailable
             }
             return try analyzer.analyzeUsingExistingCoverage(jsonPath: jsonPath)
         }
-        // Never stream `swift test`'s own output here: it would interleave
+
+        // Never stream the test run's own output here: it would interleave
         // with (and corrupt) the JSON-RPC traffic on stdout the MCP
-        // transport depends on.
+        // transport depends on. Serialized: concurrent tool calls must not
+        // run a test suite against the same package's build state at once.
+        if let scheme = args.scheme {
+            guard let destination = args.destination else {
+                throw SwiftCoverageError.usage("'destination' is required when 'scheme' is set.")
+            }
+            return try CoverageRunGate.shared.run {
+                try analyzer.analyzeWithFreshXcodeTestRun(
+                    scheme: scheme,
+                    destination: destination,
+                    project: args.xcodeProject,
+                    workspace: args.xcodeWorkspace,
+                    derivedDataPath: args.derivedDataPath,
+                    onlyTesting: args.testFilter.map { [$0] } ?? [],
+                    streamTestOutput: false
+                )
+            }
+        }
+
         var extraArgs: [String] = []
         if let filter = args.testFilter { extraArgs += ["--filter", filter] }
-        // Serialized: concurrent tool calls must not run `swift test`
-        // against the same package's `.build` at the same time.
         return try CoverageRunGate.shared.run {
             try analyzer.analyzeWithFreshTestRun(extraTestArguments: extraArgs, streamTestOutput: false)
         }

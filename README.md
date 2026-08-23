@@ -137,6 +137,34 @@ swift build -c release
 .build/release/swift-coverage Examples/DemoPackage
 ```
 
+## Xcode-project / iOS-only packages
+
+Some packages can't be built by a bare `swift test` on macOS at all — an iOS-only package, or one
+that's only buildable through an Xcode project/workspace (e.g. an SPM package wrapped by a
+generated `.xcodeproj`, with per-target Xcode-only schemes). For those, pass `--scheme` instead of
+letting swift-coverage default to `swift test`:
+
+```sh
+swift-coverage path/to/YourPackage \
+  --scheme YourModuleTests \
+  --destination 'platform=iOS Simulator,name=iPhone 17' \
+  --include "Sources/YourModule/**"
+```
+
+This runs `xcodebuild test -scheme ... -derivedDataPath ...` instead of `swift test`, then
+extracts coverage the same way SwiftPM does under the hood: it locates the raw `Coverage.profdata`
+`xcodebuild` wrote under `-derivedDataPath`, finds the scheme's `.xctest` binary, and runs `xcrun
+llvm-cov export` against them — the exact same region-level JSON `swift test`'s own coverage
+export produces, so every downstream matching/reporting path is identical either way.
+(`xcodebuild`'s own coverage reporting, `xcrun xccov view --report --json`, is function-level only
+— too coarse for this tool's branch-level matching, which is why this doesn't just use that.)
+
+Other options for this mode: `--xcode-project`/`--xcode-workspace` (explicit paths; omitted lets
+`xcodebuild` auto-detect), `--derived-data-path` (defaults to `<path>/.build/swift-coverage-xcode`,
+kept around so repeat runs are incremental rather than full rebuilds), and `--filter` (mapped to
+`xcodebuild -only-testing:` in this mode, instead of `swift test --filter`). List available
+simulators with `xcrun simctl list devices available`.
+
 ## MCP server
 
 `swift-coverage-mcp` exposes the same analysis over the
@@ -151,8 +179,9 @@ editors that call tools through MCP rather than a shell. It's a thin wrapper —
 | `list_logic_units` | no | Every logic unit and its branches, parsed from source only — for previewing what a change will require coverage for. |
 
 All three take `path` (required), plus `include`/`exclude` globs; the two that run tests also
-take `skip_tests` and `test_filter`. `check_coverage` additionally takes `format` (`json` or
-`text`).
+take `skip_tests`, `test_filter`, and the `scheme`/`destination`/`xcode_project`/`xcode_workspace`/
+`derived_data_path` options for the Xcode-project path described above. `check_coverage`
+additionally takes `format` (`json` or `text`).
 
 Register it with an MCP client by pointing it at the built binary, e.g. in Claude Code's
 `.mcp.json`:
@@ -178,7 +207,6 @@ runs against the same package would otherwise race on SwiftPM's shared `.build` 
 
 ## Known limitations (v1)
 
-- Only SwiftPM packages are supported (no `.xcodeproj`).
 - Source discovery defaults to everything under `Sources/`; a package with source directories
   elsewhere needs `--include`.
 - Column matching assumes ASCII-width source lines; a branch on a line with certain wide Unicode

@@ -68,6 +68,36 @@ public struct SwiftCoverageAnalyzer {
         try CoverageRunner(packagePath: packagePath).discoverCoverageJSONPath()
     }
 
+    /// Runs `xcodebuild test` for `scheme`, then builds the full report —
+    /// for a package that can't be built by a bare `swift test` on macOS at
+    /// all (an iOS-only package, or one only buildable through an Xcode
+    /// project/workspace). Throws `SwiftCoverageError.testsFailed` if the
+    /// build or the suite failed, and `.coverageDataUnavailable` if no
+    /// coverage export could be produced even though it passed.
+    public func analyzeWithFreshXcodeTestRun(
+        scheme: String,
+        destination: String,
+        project: String? = nil,
+        workspace: String? = nil,
+        derivedDataPath: String? = nil,
+        onlyTesting: [String] = [],
+        streamTestOutput: Bool = true
+    ) throws -> AnalysisReport {
+        let runner = XcodeCoverageRunner(
+            packagePath: packagePath,
+            scheme: scheme,
+            destination: destination,
+            project: project,
+            workspace: workspace,
+            derivedDataPath: derivedDataPath,
+            onlyTesting: onlyTesting
+        )
+        let result = try runner.run(streamOutput: streamTestOutput)
+        guard result.testsPassed else { throw SwiftCoverageError.testsFailed }
+        guard let path = result.coverageJSONPath else { throw SwiftCoverageError.coverageDataUnavailable }
+        return try analyzeUsingExistingCoverage(jsonPath: path)
+    }
+
     /// Builds the report from a previously produced coverage export JSON,
     /// without invoking `swift test` again (`--skip-tests`).
     public func analyzeUsingExistingCoverage(jsonPath: String) throws -> AnalysisReport {

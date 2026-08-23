@@ -45,8 +45,36 @@ struct SwiftCoverageCommand: ParsableCommand {
     @Option(help: "Glob (relative to the package root) to exclude from analysis. Repeatable.")
     var exclude: [String] = []
 
-    @Option(name: .customLong("filter"), help: "Passed through to `swift test --filter`.")
+    @Option(
+        name: .customLong("filter"),
+        help: "Passed through to `swift test --filter` (or, with --scheme, to `xcodebuild -only-testing:`)."
+    )
     var testFilter: String?
+
+    @Option(
+        help: """
+            Xcode scheme to test via `xcodebuild` instead of `swift test` \u{2014} for a package that's iOS-only \
+            or otherwise can't be built by a bare `swift test` on macOS. Requires --destination.
+            """
+    )
+    var scheme: String?
+
+    @Option(help: "xcodebuild destination, e.g. 'platform=iOS Simulator,name=iPhone 17'. Required with --scheme.")
+    var destination: String?
+
+    @Option(help: "Explicit .xcodeproj path, passed to xcodebuild -project. Omit to let xcodebuild auto-detect.")
+    var xcodeProject: String?
+
+    @Option(help: "Explicit .xcworkspace path, passed to xcodebuild -workspace.")
+    var xcodeWorkspace: String?
+
+    @Option(
+        help: """
+            Derived data path for a --scheme run, so its Coverage.profdata can be found afterward. Defaults to \
+            <path>/.build/swift-coverage-xcode.
+            """
+    )
+    var derivedDataPath: String?
 
     @Flag(help: "Report uncovered logic paths without failing the command.")
     var noFail: Bool = false
@@ -69,6 +97,21 @@ struct SwiftCoverageCommand: ParsableCommand {
                     throw SwiftCoverageError.coverageDataUnavailable
                 }
                 report = try analyzer.analyzeUsingExistingCoverage(jsonPath: jsonPath)
+            } else if let scheme {
+                guard let destination else {
+                    throw SwiftCoverageError.usage(
+                        "--destination is required with --scheme, e.g. 'platform=iOS Simulator,name=iPhone 17'. "
+                            + "List available simulators with `xcrun simctl list devices available`."
+                    )
+                }
+                report = try analyzer.analyzeWithFreshXcodeTestRun(
+                    scheme: scheme,
+                    destination: destination,
+                    project: xcodeProject,
+                    workspace: xcodeWorkspace,
+                    derivedDataPath: derivedDataPath,
+                    onlyTesting: testFilter.map { [$0] } ?? []
+                )
             } else {
                 var extraArgs: [String] = []
                 if let testFilter { extraArgs += ["--filter", testFilter] }
