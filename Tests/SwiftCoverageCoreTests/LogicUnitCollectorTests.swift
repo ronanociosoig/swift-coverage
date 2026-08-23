@@ -37,6 +37,20 @@ final class LogicUnitCollectorTests: XCTestCase {
         XCTAssertEqual(byName["classify"]?.enclosingTypeName, "Logic")
     }
 
+    /// Regression test: a shorthand (getter-only) computed property — the
+    /// shape of every SwiftUI `body` — must report its branches at their
+    /// real source lines, not at positions relative to some synthetic
+    /// wrapper. See `BranchCollector.collect`'s doc comment.
+    func testShorthandComputedPropertyReportsRealLineNumbers() throws {
+        let source = try fixture("Logic.swift")
+        let result = LogicUnitCollector.collect(source: source, filePath: "Logic.swift")
+        let byName = Dictionary(uniqueKeysWithValues: result.units.map { ($0.name, $0) })
+
+        let unit = try XCTUnwrap(byName["describedState"])
+        XCTAssertEqual(unit.branches.map(\.kind), [.switchCase, .switchCase])
+        XCTAssertEqual(unit.branches.map { $0.span.start.line }, [90, 92])
+    }
+
     func testIgnoreFileExcludesEverything() throws {
         let source = try fixture("IgnoredFile.swift")
         let result = LogicUnitCollector.collect(source: source, filePath: "IgnoredFile.swift")

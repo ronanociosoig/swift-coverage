@@ -74,4 +74,22 @@ struct Logic {
         let result = value ?? -1
         return result
     }
+
+    enum State { case a, b }
+    var state: State = .a
+
+    /// A shorthand (getter-only) computed property, structurally identical
+    /// to how every SwiftUI `body` is written. Regression coverage for a bug
+    /// where wrapping a shorthand getter's statements in a freshly
+    /// constructed `CodeBlockSyntax` (to satisfy an API that wanted a full
+    /// code block) corrupted every position computed inside it, since the
+    /// synthetic parent's own unpositioned tokens became the position base.
+    var describedState: String {
+        switch state {
+        case .a:
+            return "a"
+        case .b:
+            return "b"
+        }
+    }
 }

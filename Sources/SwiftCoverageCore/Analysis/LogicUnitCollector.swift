@@ -42,17 +42,19 @@ enum LogicUnitCollector {
         override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind { .skipChildren }
 
         override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
-            add(body: node.body, name: node.name.text, signature: signature(of: node), anchor: node)
+            add(body: node.body?.statements, name: node.name.text, signature: signature(of: node), anchor: node)
             return .visitChildren
         }
 
         override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
-            add(body: node.body, name: "init", signature: "init" + node.signature.trimmedDescription, anchor: node)
+            add(
+                body: node.body?.statements, name: "init",
+                signature: "init" + node.signature.trimmedDescription, anchor: node)
             return .visitChildren
         }
 
         override func visit(_ node: DeinitializerDeclSyntax) -> SyntaxVisitorContinueKind {
-            add(body: node.body, name: "deinit", signature: "deinit", anchor: node)
+            add(body: node.body?.statements, name: "deinit", signature: "deinit", anchor: node)
             return .visitChildren
         }
 
@@ -60,7 +62,7 @@ enum LogicUnitCollector {
             let propertyName = enclosingPropertyName(of: node)
             let accessorKind = node.accessorSpecifier.text
             let name = propertyName.map { "\($0).\(accessorKind)" } ?? accessorKind
-            add(body: node.body, name: name, signature: name, anchor: node)
+            add(body: node.body?.statements, name: name, signature: name, anchor: node)
             return .visitChildren
         }
 
@@ -70,19 +72,21 @@ enum LogicUnitCollector {
                     case .getter(let statements) = accessorBlock.accessors,
                     let propertyName = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
                 else { continue }
-                let body = CodeBlockSyntax(
-                    leftBrace: .leftBraceToken(),
-                    statements: statements,
-                    rightBrace: .rightBraceToken()
-                )
-                add(body: body, name: propertyName, signature: "var \(propertyName)", anchor: node)
+                // Pass `statements` (the original, correctly-positioned node)
+                // directly — never wrap it in a freshly constructed
+                // `CodeBlockSyntax`, which would reparent it under new,
+                // unpositioned brace tokens and corrupt every position
+                // computed beneath it (see `BranchCollector.collect`).
+                add(body: statements, name: propertyName, signature: "var \(propertyName)", anchor: node)
             }
             return .visitChildren
         }
 
         // MARK: - Shared bookkeeping
 
-        private func add(body: CodeBlockSyntax?, name: String, signature: String, anchor: some SyntaxProtocol) {
+        private func add(
+            body: CodeBlockItemListSyntax?, name: String, signature: String, anchor: some SyntaxProtocol
+        ) {
             guard let body else { return }
             let branches = BranchCollector.collect(in: body, converter: converter)
             guard !branches.isEmpty else { return }

@@ -21,9 +21,18 @@ final class BranchCollector: SyntaxVisitor {
         super.init(viewMode: .sourceAccurate)
     }
 
-    static func collect(in body: CodeBlockSyntax, converter: SourceLocationConverter) -> [LogicBranch] {
+    /// Takes the statement list itself, not a `CodeBlockSyntax` wrapper —
+    /// callers must never synthesize a fresh `CodeBlockSyntax` (with newly
+    /// constructed, unpositioned brace tokens) to pass a shorthand getter's
+    /// statements through: reparenting an existing node under a synthetic
+    /// parent recomputes absolute positions relative to that synthetic
+    /// tree's own root, silently corrupting every position `span(of:)`
+    /// computes beneath it. Passing the original `CodeBlockItemListSyntax`
+    /// directly avoids constructing a parent at all.
+    static func collect(in statements: CodeBlockItemListSyntax, converter: SourceLocationConverter) -> [LogicBranch]
+    {
         let collector = BranchCollector(converter: converter)
-        collector.walk(body)
+        collector.walk(statements)
         return collector.branches
     }
 
