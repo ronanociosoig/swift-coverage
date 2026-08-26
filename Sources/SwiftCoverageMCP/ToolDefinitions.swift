@@ -75,6 +75,16 @@ enum ToolDefinitions {
         ),
     ])
 
+    private static let diffBaseProperty: Value = .object([
+        "type": .string("string"),
+        "description": .string(
+            "Only require coverage for logic added or changed since this git ref (e.g. 'origin/main'), "
+                + "computed against their merge-base so commits landed on the ref afterward don't count. Use "
+                + "this for PR-review-style feedback — what new logic in the current change is uncovered — "
+                + "rather than every pre-existing gap in the whole codebase."
+        ),
+    ])
+
     static let checkCoverage = Tool(
         name: "check_coverage",
         description: """
@@ -89,7 +99,8 @@ enum ToolDefinitions {
             true/false). A struct or type with no \
             branching logic never appears here — it has nothing to require coverage of. \
             Declarations or branches marked with `// swift-coverage:ignore`, \
-            `// swift-coverage:ignore-branch`, or `// swift-coverage:ignore-file` are excluded.
+            `// swift-coverage:ignore-branch`, or `// swift-coverage:ignore-file` are excluded. \
+            Set diff_base to scope the whole check to only logic added or changed since a git ref.
             """,
         inputSchema: .object([
             "type": .string("object"),
@@ -105,6 +116,7 @@ enum ToolDefinitions {
                 "xcode_project": xcodeProjectProperty,
                 "xcode_workspace": xcodeWorkspaceProperty,
                 "derived_data_path": derivedDataPathProperty,
+                "diff_base": diffBaseProperty,
                 "format": .object([
                     "type": .string("string"),
                     "enum": .array([.string("json"), .string("text")]),
@@ -119,8 +131,13 @@ enum ToolDefinitions {
         name: "list_uncovered_branches",
         description: """
             Same analysis as check_coverage, but returns just the branches that still need a \
-            test: file, line, enclosing function, and a short label (e.g. "case .vip", "else", \
-            "guard else"). Use this to get a concrete to-do list without the full report.
+            test: file, line, enclosing function, a short label (e.g. "case .vip", "else", \
+            "guard else"), and a concrete suggestion (e.g. "Add a test calling Discount.tierName \
+            with a value matching `case .vip`."). Use this to get a concrete to-do list without \
+            the full report — well suited to an agent loop: call this, write a test for each \
+            entry, rerun, repeat until empty. Set diff_base to scope that to-do list to only \
+            logic added or changed since a git ref, e.g. for PR-review-style feedback on a branch \
+            without flagging every pre-existing gap in the codebase at once.
             """,
         inputSchema: .object([
             "type": .string("object"),
@@ -136,6 +153,7 @@ enum ToolDefinitions {
                 "xcode_project": xcodeProjectProperty,
                 "xcode_workspace": xcodeWorkspaceProperty,
                 "derived_data_path": derivedDataPathProperty,
+                "diff_base": diffBaseProperty,
             ]),
         ])
     )

@@ -23,6 +23,10 @@ public enum JSONReporter {
         /// Human-readable justification: the matched region's span and
         /// execution count, or why nothing matched.
         var detail: String?
+        /// A concrete next step, e.g. "Add a test calling Discount.tierName
+        /// with a value matching `case .vip`." Only present for branches
+        /// that still need one — `nil` when covered or suppressed.
+        var suggestion: String?
         var suppressed: Bool
     }
 
@@ -45,6 +49,10 @@ public enum JSONReporter {
         var lineCoveragePercent: Double?
         var units: [UnitDTO]
         var filesWithoutLogic: [String]
+        /// Set when this report was scoped to only new/changed logic via
+        /// `--diff-base`/`diff_base` — the git ref changes were computed
+        /// against. `nil` for a full, unscoped report.
+        var diffBase: String?
     }
 
     public static func render(_ report: AnalysisReport) throws -> String {
@@ -55,7 +63,8 @@ public enum JSONReporter {
             uncoveredRequiredBranchCount: report.uncoveredRequiredBranchCount,
             lineCoveragePercent: report.lineCoveragePercent,
             units: report.units.map(unitDTO),
-            filesWithoutLogic: report.filesWithoutLogic
+            filesWithoutLogic: report.filesWithoutLogic,
+            diffBase: report.diffBase
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -72,11 +81,11 @@ public enum JSONReporter {
             line: unit.location.line,
             complexity: unit.cyclomaticComplexity,
             suppressed: unit.isSuppressed,
-            branches: unit.branches.map(branchDTO)
+            branches: unit.branches.map { branchDTO($0, in: unit) }
         )
     }
 
-    private static func branchDTO(_ branch: LogicBranch) -> BranchDTO {
+    private static func branchDTO(_ branch: LogicBranch, in unit: LogicUnit) -> BranchDTO {
         let evidence = branch.evidence
         return BranchDTO(
             kind: branch.kind.rawValue,
@@ -87,6 +96,8 @@ public enum JSONReporter {
             confidence: evidence?.confidence.rawValue ?? CoverageConfidence.none.rawValue,
             evidence: evidence?.kind.rawValue ?? "not_evaluated",
             detail: evidence?.detail,
+            suggestion: (branch.isCovered == true || branch.isSuppressed)
+                ? nil : SuggestionGenerator.suggest(for: branch, in: unit),
             suppressed: branch.isSuppressed
         )
     }

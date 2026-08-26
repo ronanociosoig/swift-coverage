@@ -76,6 +76,16 @@ struct SwiftCoverageCommand: ParsableCommand {
     )
     var derivedDataPath: String?
 
+    @Option(
+        help: """
+            Only require coverage for logic added or changed since this git ref (e.g. 'origin/main'), \
+            computed against their merge-base so commits landed on the ref afterward don't count. Lets an \
+            existing, previously-untested codebase adopt swift-coverage without every pre-existing gap \
+            failing the check at once \u{2014} exactly what a PR check wants.
+            """
+    )
+    var diffBase: String?
+
     @Flag(help: "Report uncovered logic paths without failing the command.")
     var noFail: Bool = false
 
@@ -90,7 +100,7 @@ struct SwiftCoverageCommand: ParsableCommand {
     func run() throws {
         let analyzer = SwiftCoverageAnalyzer(packagePath: path, include: include, exclude: exclude)
 
-        let report: AnalysisReport
+        var report: AnalysisReport
         do {
             if skipTests {
                 guard let jsonPath = try coverageJson ?? analyzer.discoverExistingCoverageJSONPath() else {
@@ -116,6 +126,10 @@ struct SwiftCoverageCommand: ParsableCommand {
                 var extraArgs: [String] = []
                 if let testFilter { extraArgs += ["--filter", testFilter] }
                 report = try analyzer.analyzeWithFreshTestRun(extraTestArguments: extraArgs)
+            }
+            if let diffBase {
+                let changedLines = try GitDiff.changedLines(packagePath: path, base: diffBase)
+                report = report.scopedToChangedLines(changedLines, diffBase: diffBase)
             }
         } catch let error as SwiftCoverageError {
             FileHandle.standardError.write(Data(((error.errorDescription ?? "Unknown error") + "\n").utf8))

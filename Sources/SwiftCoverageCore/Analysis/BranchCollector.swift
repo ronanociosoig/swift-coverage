@@ -65,7 +65,12 @@ final class BranchCollector: SyntaxVisitor {
     override func visit(_ node: GuardStmtSyntax) -> SyntaxVisitorContinueKind {
         let suppressed = Suppression.containsIgnoreBranch(node.leadingTrivia)
         branches.append(
-            LogicBranch(kind: .guardElse, label: "guard else", span: span(of: node.body), isSuppressed: suppressed)
+            LogicBranch(
+                kind: .guardElse,
+                label: "guard \(summarize(node.conditions.trimmedDescription)) else",
+                span: span(of: node.body),
+                isSuppressed: suppressed
+            )
         )
         return .visitChildren
     }
@@ -94,8 +99,11 @@ final class BranchCollector: SyntaxVisitor {
 
     override func visit(_ node: ForStmtSyntax) -> SyntaxVisitorContinueKind {
         let suppressed = Suppression.containsIgnoreBranch(node.leadingTrivia)
+        let whereText = node.whereClause.map { " \(summarize($0.trimmedDescription))" } ?? ""
+        let label =
+            "for \(summarize(node.pattern.trimmedDescription)) in \(summarize(node.sequence.trimmedDescription))\(whereText)"
         branches.append(
-            LogicBranch(kind: .forLoop, label: "for-loop body", span: span(of: node.body), isSuppressed: suppressed)
+            LogicBranch(kind: .forLoop, label: label, span: span(of: node.body), isSuppressed: suppressed)
         )
         return .visitChildren
     }
@@ -105,7 +113,7 @@ final class BranchCollector: SyntaxVisitor {
         branches.append(
             LogicBranch(
                 kind: .whileLoop,
-                label: "while-loop body",
+                label: "while \(summarize(node.conditions.trimmedDescription))",
                 span: span(of: node.body),
                 isSuppressed: suppressed
             )
@@ -118,7 +126,7 @@ final class BranchCollector: SyntaxVisitor {
         branches.append(
             LogicBranch(
                 kind: .repeatLoop,
-                label: "repeat-loop body",
+                label: "repeat-while \(summarize(node.condition.trimmedDescription))",
                 span: span(of: node.body),
                 isSuppressed: suppressed
             )

@@ -164,7 +164,47 @@ That match is heuristic, and swift-coverage says so explicitly rather than hidin
 (high/medium/none), and `evidence` (which of four specific things was actually found — an exact
 region match, a match inferred from an enclosing region, no matching region, or no coverage data for
 the file at all) — see [SEMANTICS.md](SEMANTICS.md) for the full breakdown of which constructs land
-on which.
+on which. Every uncovered branch also carries a `suggestion` — a concrete next step, e.g. `"Add a
+test calling Discount.tierName with a value matching \`case .vip\`."` — mechanically derived from
+the branch's own kind and label, meant for an agent driving a write-test/rerun loop as much as a
+human reading the output:
+
+```json
+{ "kind": "case", "branch": "case .vip", "line": 40, "column": 13,
+  "status": "uncovered", "confidence": "high", "evidence": "direct_execution",
+  "detail": "region [40:13–42:6] matches this branch exactly, executed 0 times",
+  "suggestion": "Add a test calling Discount.tierName with a value matching `case .vip`.",
+  "suppressed": false }
+```
+
+## Incremental mode: only flag new or changed logic
+
+Turning swift-coverage on in an existing, previously-untested codebase all at once means every
+pre-existing gap fails the check simultaneously — exactly the "too many findings to adopt" problem
+that keeps teams from ever turning a strict check on. `--diff-base <ref>` scopes the whole
+requirement down to logic added or changed since that git ref, computed against its **merge-base**
+with `HEAD` so commits landed on `<ref>` after the branch diverged don't count — the same diff a
+freshly-opened PR would show:
+
+```sh
+# What new logic does this branch introduce that isn't tested yet?
+swift-coverage . --diff-base origin/main
+
+# Same, as a to-do list for an agent: file, line, unit, and a suggestion per gap.
+swift-coverage-mcp   # via the list_uncovered_branches tool with diff_base set
+```
+
+A branch is in scope if any line of its own span was changed or added — a brand new function has
+every line "added," so all of its branches are in scope automatically; a branch inside an existing,
+untouched function stays out of scope even if the rest of the file changed. The one case this
+doesn't catch: modifying only a condition (e.g. `if x > 5` to `if x > 10`) without touching the
+branch body's own lines — the body's span won't show as changed, so a previously-passing-or-ignored
+branch there won't be picked up by a threshold change alone.
+
+Pass/fail and every other flag work exactly the same in this mode — `--diff-base` only narrows
+*which* branches are required, not what "required" means once they are. The response (both text and
+JSON) says plainly when it's scoped, and to what ref, so it's never ambiguous whether "0 uncovered"
+means "this change is fully tested" or "the whole codebase is."
 
 ## Example
 
@@ -219,13 +259,13 @@ editors that call tools through MCP rather than a shell. It's a thin wrapper —
 | Tool | Runs tests? | Returns |
 |---|---|---|
 | `check_coverage` | yes (unless `skip_tests`) | The full report: `passes`, every logic unit, every branch's `status`/`confidence`/`evidence`/`suppressed` state (see [SEMANTICS.md](SEMANTICS.md)). |
-| `list_uncovered_branches` | yes (unless `skip_tests`) | Just the branches still needing a test — file, line, unit, label. |
+| `list_uncovered_branches` | yes (unless `skip_tests`) | Just the branches still needing a test — file, line, unit, label, and a `suggestion` per gap. Built for an agent loop: call this, act on each entry, rerun, repeat until empty. |
 | `list_logic_units` | no | Every logic unit and its branches, parsed from source only — for previewing what a change will require coverage for. |
 
 All three take `path` (required), plus `include`/`exclude` globs; the two that run tests also
-take `skip_tests`, `test_filter`, and the `scheme`/`destination`/`xcode_project`/`xcode_workspace`/
-`derived_data_path` options for the Xcode-project path described above. `check_coverage`
-additionally takes `format` (`json` or `text`).
+take `skip_tests`, `test_filter`, `diff_base` (see [Incremental mode](#incremental-mode-only-flag-new-or-changed-logic)),
+and the `scheme`/`destination`/`xcode_project`/`xcode_workspace`/`derived_data_path` options for the
+Xcode-project path described above. `check_coverage` additionally takes `format` (`json` or `text`).
 
 Register it with an MCP client by pointing it at the built binary, e.g. in Claude Code's
 `.mcp.json`:
@@ -247,6 +287,19 @@ runs against the same package would otherwise race on SwiftPM's shared `.build` 
 ```yaml
 - name: Check logic coverage
   run: swift-coverage . --format json > coverage-report.json || (cat coverage-report.json && exit 1)
+```
+
+For a PR check on an existing codebase, scope it to the PR's own changes with `--diff-base` (needs
+enough history checked out for the merge-base to be found — `fetch-depth: 0`, or at least back to
+the PR's branch point):
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- name: Check logic coverage on changed lines only
+  run: swift-coverage . --diff-base origin/${{ github.base_ref }} --format json > coverage-report.json \
+    || (cat coverage-report.json && exit 1)
 ```
 
 ## Known limitations (v1)

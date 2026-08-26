@@ -20,6 +20,9 @@ enum ListUncoveredBranchesHandler {
         /// "no_matching_region" | "file_not_instrumented".
         var evidence: String
         var detail: String
+        /// A concrete next step, e.g. "Add a test calling Discount.tierName
+        /// with a value matching `case .vip`."
+        var suggestion: String
     }
 
     struct ResultDTO: Codable {
@@ -47,7 +50,8 @@ enum ListUncoveredBranchesHandler {
                         status: evidence?.status.rawValue ?? CoverageStatus.unknown.rawValue,
                         confidence: evidence?.confidence.rawValue ?? CoverageConfidence.none.rawValue,
                         evidence: evidence?.kind.rawValue ?? "not_evaluated",
-                        detail: evidence?.detail ?? "no coverage data for this branch"
+                        detail: evidence?.detail ?? "no coverage data for this branch",
+                        suggestion: SuggestionGenerator.suggest(for: branch, in: unit)
                     )
                 }
             }

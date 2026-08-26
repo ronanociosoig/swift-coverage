@@ -6,6 +6,12 @@ public enum TextReporter {
         var lines: [String] = []
         let covered = report.requiredBranchCount - report.uncoveredRequiredBranchCount
 
+        if let diffBase = report.diffBase {
+            lines.append(
+                "swift-coverage: scoped to logic added/changed since '\(diffBase)' \u{2014} pre-existing gaps "
+                    + "elsewhere are not included."
+            )
+        }
         lines.append(
             "swift-coverage: \(report.units.count) logic unit(s), \(report.requiredBranchCount) required branch(es)"
         )

@@ -15,6 +15,7 @@ enum CoverageRequest {
         var xcodeProject: String?
         var xcodeWorkspace: String?
         var derivedDataPath: String?
+        var diffBase: String?
     }
 
     static func parse(_ arguments: [String: Value]?) -> Arguments? {
@@ -29,13 +30,23 @@ enum CoverageRequest {
             destination: ParamExtractor.string("destination", from: arguments),
             xcodeProject: ParamExtractor.string("xcode_project", from: arguments),
             xcodeWorkspace: ParamExtractor.string("xcode_workspace", from: arguments),
-            derivedDataPath: ParamExtractor.string("derived_data_path", from: arguments)
+            derivedDataPath: ParamExtractor.string("derived_data_path", from: arguments),
+            diffBase: ParamExtractor.string("diff_base", from: arguments)
         )
     }
 
     static func buildReport(_ args: Arguments) throws -> AnalysisReport {
         let analyzer = SwiftCoverageAnalyzer(packagePath: args.path, include: args.include, exclude: args.exclude)
+        let report = try buildUnscopedReport(args, analyzer: analyzer)
 
+        guard let diffBase = args.diffBase else { return report }
+        let changedLines = try GitDiff.changedLines(packagePath: args.path, base: diffBase)
+        return report.scopedToChangedLines(changedLines, diffBase: diffBase)
+    }
+
+    private static func buildUnscopedReport(_ args: Arguments, analyzer: SwiftCoverageAnalyzer) throws
+        -> AnalysisReport
+    {
         if args.skipTests {
             guard let jsonPath = try analyzer.discoverExistingCoverageJSONPath() else {
                 throw SwiftCoverageError.coverageDataUnavailable
