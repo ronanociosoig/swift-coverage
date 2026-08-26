@@ -38,22 +38,33 @@ public struct LogicBranch: Sendable {
     public var span: SourceSpan
     /// Set when a `// swift-coverage:ignore-branch` annotation applies directly to this branch.
     public var isSuppressed: Bool
-    /// Filled in once coverage data has been matched against this branch's span.
-    /// `nil` until `SwiftCoverageAnalyzer` cross-references the coverage report.
-    public var isCovered: Bool?
+    /// Filled in once coverage data has been matched against this branch's
+    /// span. `nil` until `SwiftCoverageAnalyzer` cross-references the
+    /// coverage report — see `CoverageEvidence` for what this actually
+    /// represents once it's set, including cases where no real verdict was
+    /// reached (`.status == .unknown`).
+    public var evidence: CoverageEvidence?
 
     public init(
         kind: BranchKind,
         label: String,
         span: SourceSpan,
         isSuppressed: Bool = false,
-        isCovered: Bool? = nil
+        evidence: CoverageEvidence? = nil
     ) {
         self.kind = kind
         self.label = label
         self.span = span
         self.isSuppressed = isSuppressed
-        self.isCovered = isCovered
+        self.evidence = evidence
+    }
+
+    /// Convenience derived from `evidence.status`: `nil` until resolved,
+    /// `true` only once resolved as confirmedly `.covered`. Both `.uncovered`
+    /// and `.unknown` collapse to `false` here — see `evidence` for which one.
+    public var isCovered: Bool? {
+        guard let evidence else { return nil }
+        return evidence.status == .covered
     }
 }
 
@@ -115,10 +126,14 @@ public struct LogicUnit: Sendable {
     }
 
     /// The subset of `uncoveredRequiredBranches` whose coverage verdict is
-    /// unknown rather than confirmedly unreached — worth reporting
-    /// differently, since the fix is "make sure this file is compiled into
-    /// a tested target", not "add a test for this specific branch".
+    /// unknown rather than confirmedly unreached — no evidence was ever
+    /// resolved for them (`evidence == nil`), or it was and no real verdict
+    /// could be reached (`evidence.status == .unknown`, e.g.
+    /// `.fileNotInstrumented`/`.noMatchingRegion` — see `CoverageEvidence`).
+    /// Worth reporting differently from a confirmed miss: the fix is "make
+    /// sure this file is compiled into a tested target", not "add a test
+    /// for this specific branch".
     public var unresolvedBranches: [LogicBranch] {
-        requiredBranches.filter { $0.isCovered == nil }
+        requiredBranches.filter { $0.evidence == nil || $0.evidence?.status == .unknown }
     }
 }

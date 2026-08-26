@@ -10,7 +10,16 @@ enum ListUncoveredBranchesHandler {
         var line: Int
         var unit: String
         var branch: String
-        var reason: String
+        /// "covered" | "uncovered" | "unknown" — always non-"covered" here,
+        /// since this list is only the ones that still need attention, but
+        /// distinguishes a confirmed miss from no verdict being reachable.
+        var status: String
+        /// "high" | "medium" | "none" — how much to trust `status`.
+        var confidence: String
+        /// "direct_execution" | "inferred_from_enclosing_region" |
+        /// "no_matching_region" | "file_not_instrumented".
+        var evidence: String
+        var detail: String
     }
 
     struct ResultDTO: Codable {
@@ -29,13 +38,16 @@ enum ListUncoveredBranchesHandler {
             let branches = report.unitsWithUncoveredLogic.flatMap { unit -> [BranchDTO] in
                 let qualifiedName = unit.enclosingTypeName.map { "\($0).\(unit.name)" } ?? unit.name
                 return unit.uncoveredRequiredBranches.map { branch in
-                    BranchDTO(
+                    let evidence = branch.evidence
+                    return BranchDTO(
                         file: unit.filePath,
                         line: branch.span.start.line,
                         unit: qualifiedName,
                         branch: branch.label,
-                        reason: branch.isCovered == nil
-                            ? "no coverage data for this file" : "never reached by a test"
+                        status: evidence?.status.rawValue ?? CoverageStatus.unknown.rawValue,
+                        confidence: evidence?.confidence.rawValue ?? CoverageConfidence.none.rawValue,
+                        evidence: evidence?.kind.rawValue ?? "not_evaluated",
+                        detail: evidence?.detail ?? "no coverage data for this branch"
                     )
                 }
             }

@@ -97,6 +97,11 @@ final class TortureFixtureDetectionTests: XCTestCase {
         XCTAssertEqual(byName["streetName"]?.branches.map(\.kind), [.nilCoalescing])
     }
 
+    func testTernaryProducesOneObligationPerSide() throws {
+        let byName = try units("Optionals.swift")
+        XCTAssertEqual(byName["sizeLabel"]?.branches.map(\.kind), [.ternaryThen, .ternaryElse])
+    }
+
     // MARK: - §9 result builder branches are detected like ordinary ones
 
     func testResultBuilderBranchesAreDetectedNormally() throws {

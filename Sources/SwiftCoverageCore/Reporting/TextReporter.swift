@@ -27,7 +27,7 @@ public enum TextReporter {
             for unit in uncoveredUnits {
                 let qualifiedName = unit.enclosingTypeName.map { "\($0).\(unit.name)" } ?? unit.name
                 for branch in unit.uncoveredRequiredBranches {
-                    let note = branch.isCovered == nil ? "  [no coverage data for this file]" : ""
+                    let note = branch.evidence.map { "  [\($0.confidence.rawValue) confidence: \($0.detail)]" } ?? ""
                     lines.append(
                         "  \(unit.filePath):\(branch.span.start.line)  \(qualifiedName)  \(branch.label)\(note)"
                     )

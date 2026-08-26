@@ -12,8 +12,8 @@ cd Examples/TortureTest && swift test
 swift-coverage Examples/TortureTest --verbose
 ```
 
-As of the run this document was written from: **21 logic units, 34 required branches, 27 covered
-(79.4%)**, with exactly the 7 gaps predicted below (plus one genuine surprise, §10) — and one
+As of the run this document was written from: **22 logic units, 36 required branches, 28 covered
+(77.8%)**, with exactly the 8 gaps predicted below (plus one genuine surprise, §10) — and one
 prediction that was initially *wrong* in an instructive way: see §1.
 
 ## The core model
@@ -26,6 +26,51 @@ nothing to leave uncovered, because nothing was required.
 
 Each numbered section below is: what's detected, what obligation(s) it produces, and what — if
 anything — is *not* required despite intuitively seeming like it should be.
+
+## Confidence and evidence: making the heuristic visible
+
+Matching a branch's source span against a coverage export is inherently heuristic (see
+`CoverageIndex`'s own doc comment for the mechanism), and swift-coverage does not hide that behind a
+bare `true`/`false`. Every branch's verdict carries a `CoverageEvidence`: a `status`
+(`covered`/`uncovered`/`unknown`), a `confidence` (`high`/`medium`/`none`) derived mechanically from
+*how* that status was reached, an `evidence` kind, and a human-readable `detail`. In JSON
+(`check_coverage`, `--format json`, `list_uncovered_branches`):
+
+```json
+{ "kind": "case", "branch": "case .vip", "line": 40, "column": 13,
+  "status": "uncovered", "confidence": "high", "evidence": "direct_execution",
+  "detail": "region [40:13–42:6] matches this branch exactly, executed 0 times",
+  "suppressed": false }
+```
+
+Four evidence kinds, in decreasing order of how much to trust the verdict:
+
+| Evidence kind | Confidence | Meaning |
+|---|---|---|
+| `direct_execution` | `high` | The matched coverage region's span **exactly equals** the branch's own span — this region unambiguously *is* the branch, not a proxy standing in for it. |
+| `inferred_from_enclosing_region` | `medium` | A region was matched (the innermost one whose span contains the branch's start), but its span differs from the branch's own — the verdict is inferred from an enclosing/overlapping region rather than read off an exact match. |
+| `no_matching_region` | `none` | The branch's file has coverage data (it was instrumented), but no region's span contains the branch's start position at all. `status` is `unknown`, not `uncovered` — no verdict was reachable, which is a different claim from a confirmed miss. |
+| `file_not_instrumented` | `none` | The branch's file has no coverage data in the export whatsoever — most often because it wasn't compiled into any tested target. `status` is `unknown` for the same reason as above. |
+
+**`unknown` still counts as a failure** for `swift-coverage check`'s pass/fail gate, same as
+`uncovered` — "no evidence this ran" is exactly the kind of gap a percentage threshold can hide, so
+it isn't a silent pass. What changes is that the *reason* is now visible and distinguishable: a
+`file_not_instrumented` branch needs "make sure this file is compiled into a tested target," not
+"write a test for this specific line," and conflating the two used to make that fix harder to find.
+
+**Which construct lands on which confidence is not asserted — it was measured**, across every
+fixture in this document, by running `swift-coverage Examples/TortureTest --format json` and
+tabulating `evidence` per `kind`:
+
+| Branch kind | Evidence kind observed | Confidence |
+|---|---|---|
+| `if`, `else`, `guard-else`, `catch`, `for`, `while`, `repeat-while` | `direct_execution` | `high` |
+| `??` (`nil-coalescing`), ternary `then`/`else` | `direct_execution` | `high` |
+| `switch` `case` (including `default`) | `inferred_from_enclosing_region`, always | `medium` |
+
+Only `switch` cases come out `medium` — every other tracked construct's computed span happens to
+match the compiler's own region exactly, which was not obvious in advance (§4 explains why `switch`
+is the exception: its region starts at the `case` label, before the branch's own statements).
 
 ---
 
@@ -196,11 +241,15 @@ non-promise, not an unverified gap).
 
 ---
 
-## 8. Optional fallbacks (`??`) and optional chaining (`?.`)
+## 8. Optional fallbacks (`??`), optional chaining (`?.`), and the ternary operator (`?:`)
 
 **Fixture:** `Optionals.swift`
 
-**Required:** one obligation per `??` — the fallback (right-hand side) only.
+**The ternary operator (`cond ? a : b`) gets one obligation per side** — `then` and `else`,
+independently matched, exactly like `if`/`else`. `sizeLabel` was deliberately exercised on only the
+`then` side; swift-coverage correctly flagged `else` as uncovered.
+
+**`??`: one obligation per `??`** — the fallback (right-hand side) only.
 
 **Not required:** the "left-hand side was non-nil" path has no obligation.
 
@@ -316,27 +365,28 @@ the machine this suite runs on); swift-coverage correctly flagged `else` as unco
 
 ## Summary table
 
-| Construct | Obligation(s) | Not required |
-|---|---|---|
-| `if` / `if`-`else` | 1 per body present | condition-false path if no `else` written |
-| `if a && b` / `if a \|\| b` | 1 per body (whole condition) | each operand's individual outcome |
-| `if case` | 1 per body present | — (same as plain `if`) |
-| `guard` / `guard case let` | 1 (`else` body) | the success/fallthrough path |
-| `switch` case / `default` | 1 each, independent | — |
-| `switch case ... where` | 1 (shared with the case) | the guard having failed at least once |
-| `switch case A, B:` | 1 (shared) | each pattern individually matching |
-| `catch` (each clause) | 1 each, independent | — |
-| `defer` | 0 | n/a — not a decision point |
-| `while` / `for`-`in` | 1 (body entered) | zero-iteration execution |
-| `repeat`-`while` | 1 (body entered) | n/a — zero iterations isn't possible |
-| `for-in ... where` | 1 (body entered) | filter both including and excluding something |
-| `??` | 1 (fallback), each `??` in a chain independent | the non-nil path |
-| `?.` optional chaining | 0 | n/a — not tracked at all |
-| `@resultBuilder`/`@ViewBuilder` branches | same as the underlying `if`/`switch` | — (verified, not assumed) |
-| macro invocation (call site) | same as surrounding code | — (macro is syntactically inert) |
-| macro implementation (own logic) | **none, ever** | requires a separate macro-expansion unit test |
-| `#if`/`#elseif`/`#else` | 0 | n/a — untaken clauses don't exist in the binary |
-| `if #available` | 1 per body present | the side unreachable on the test runner's OS |
+| Construct | Obligation(s) | Not required | Confidence when matched |
+|---|---|---|---|
+| `if` / `if`-`else` | 1 per body present | condition-false path if no `else` written | high |
+| `if a && b` / `if a \|\| b` | 1 per body (whole condition) | each operand's individual outcome | high |
+| `if case` | 1 per body present | — (same as plain `if`) | high |
+| `guard` / `guard case let` | 1 (`else` body) | the success/fallthrough path | high |
+| `switch` case / `default` | 1 each, independent | — | medium (inferred) |
+| `switch case ... where` | 1 (shared with the case) | the guard having failed at least once | medium (inferred) |
+| `switch case A, B:` | 1 (shared) | each pattern individually matching | medium (inferred) |
+| `catch` (each clause) | 1 each, independent | — | high |
+| `defer` | 0 | n/a — not a decision point | n/a |
+| `while` / `for`-`in` | 1 (body entered) | zero-iteration execution | high |
+| `repeat`-`while` | 1 (body entered) | n/a — zero iterations isn't possible | high |
+| `for-in ... where` | 1 (body entered) | filter both including and excluding something | high |
+| ternary `?:` | 1 per side (`then`/`else`) | — | high |
+| `??` | 1 (fallback), each `??` in a chain independent | the non-nil path | high |
+| `?.` optional chaining | 0 | n/a — not tracked at all | n/a |
+| `@resultBuilder`/`@ViewBuilder` branches | same as the underlying `if`/`switch` | — (verified, not assumed) | same as underlying construct |
+| macro invocation (call site) | same as surrounding code | — (macro is syntactically inert) | same as surrounding code |
+| macro implementation (own logic) | **none, ever** | requires a separate macro-expansion unit test | n/a — always `file_not_instrumented` |
+| `#if`/`#elseif`/`#else` | 0 | n/a — untaken clauses don't exist in the binary | n/a |
+| `if #available` | 1 per body present | the side unreachable on the test runner's OS | high |
 
 ## What would need to change to claim classical branch coverage
 

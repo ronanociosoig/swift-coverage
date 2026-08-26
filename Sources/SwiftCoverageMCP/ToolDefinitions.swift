@@ -83,7 +83,10 @@ enum ToolDefinitions {
             ternary/?? alternative — was reached by a test. Unlike a line/statement coverage \
             percentage, this fails on a single untested branch even if the overall statement \
             coverage looks high. Returns the full report as JSON, including `passes` and, for \
-            each logic unit, each branch's covered/suppressed state. A struct or type with no \
+            each logic unit, each branch's status/confidence/evidence/suppressed state (see \
+            SEMANTICS.md \u{2014} status is covered/uncovered/unknown, confidence and evidence make \
+            the heuristic nature of the coverage match explicit rather than hiding it behind a bare \
+            true/false). A struct or type with no \
             branching logic never appears here — it has nothing to require coverage of. \
             Declarations or branches marked with `// swift-coverage:ignore`, \
             `// swift-coverage:ignore-branch`, or `// swift-coverage:ignore-file` are excluded.

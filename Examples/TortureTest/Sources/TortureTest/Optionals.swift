@@ -1,4 +1,4 @@
-/// `??` and optional chaining (`?.`).
+/// `??`, optional chaining (`?.`), and the ternary operator (`?:`).
 public struct Optionals {
     public init() {}
 
@@ -27,6 +27,14 @@ public struct Optionals {
     /// obligation, fully exercised across both nil and non-nil `person`.
     public func streetName(_ person: Person?) -> String {
         person?.address?.street ?? "unknown"
+    }
+
+    /// The ternary operator: one obligation per side, independently
+    /// matched, exactly like `if`/`else` (see `SEMANTICS.md`). Deliberately
+    /// exercised on only the `then` side (see `OptionalsTests`), so the
+    /// `else` side should surface as uncovered.
+    public func sizeLabel(_ isLarge: Bool) -> String {
+        isLarge ? "large" : "small"
     }
 }
 

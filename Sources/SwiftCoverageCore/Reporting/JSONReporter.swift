@@ -5,10 +5,24 @@ import Foundation
 public enum JSONReporter {
     struct BranchDTO: Codable {
         var kind: String
-        var label: String
+        var branch: String
         var line: Int
         var column: Int
-        var covered: Bool?
+        /// "covered" | "uncovered" | "unknown" — `unknown` means no verdict
+        /// could be reached at all (see `evidence`/`confidence`), not that
+        /// one was reached and came back negative. It still counts as a
+        /// failure for `passes`.
+        var status: String
+        /// "high" | "medium" | "none" — how much to trust `status`, derived
+        /// mechanically from `evidence`. See `CoverageConfidence`.
+        var confidence: String
+        /// "direct_execution" | "inferred_from_enclosing_region" |
+        /// "no_matching_region" | "file_not_instrumented". See
+        /// `CoverageEvidenceKind` for what each means.
+        var evidence: String
+        /// Human-readable justification: the matched region's span and
+        /// execution count, or why nothing matched.
+        var detail: String?
         var suppressed: Bool
     }
 
@@ -63,12 +77,16 @@ public enum JSONReporter {
     }
 
     private static func branchDTO(_ branch: LogicBranch) -> BranchDTO {
-        BranchDTO(
+        let evidence = branch.evidence
+        return BranchDTO(
             kind: branch.kind.rawValue,
-            label: branch.label,
+            branch: branch.label,
             line: branch.span.start.line,
             column: branch.span.start.column,
-            covered: branch.isCovered,
+            status: evidence?.status.rawValue ?? CoverageStatus.unknown.rawValue,
+            confidence: evidence?.confidence.rawValue ?? CoverageConfidence.none.rawValue,
+            evidence: evidence?.kind.rawValue ?? "not_evaluated",
+            detail: evidence?.detail,
             suppressed: branch.isSuppressed
         )
     }

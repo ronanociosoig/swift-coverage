@@ -11,6 +11,9 @@
 /// finding every region whose span *contains the branch's start position*,
 /// and taking the one with the latest start — the innermost of them, i.e.
 /// the region actually governing execution at that point.
+///
+/// This is necessarily heuristic — see `CoverageEvidence`, which makes that
+/// explicit in the result rather than collapsing it into a bare `Bool`.
 struct CoverageIndex {
     private var regionsByFile: [String: [CoverageRegion]]
 
@@ -29,16 +32,60 @@ struct CoverageIndex {
         self.regionsByFile = byFile
     }
 
-    /// `true`/`false` once a covering region is found; `nil` when no coverage
-    /// region falls within the branch's span at all — most often because
-    /// `filePath` wasn't compiled into the target(s) under test, so there is
-    /// simply no verdict to give.
-    func isCovered(_ span: SourceSpan, in filePath: String) -> Bool? {
-        guard let regions = regionsByFile[filePath] else { return nil }
+    /// Matches `span` against the index and returns the full verdict: not
+    /// just covered/uncovered, but which of the four evidence kinds
+    /// produced that verdict (or the lack of one). See `CoverageEvidenceKind`.
+    func evaluate(_ span: SourceSpan, in filePath: String) -> CoverageEvidence {
+        guard let regions = regionsByFile[filePath] else {
+            return CoverageEvidence(
+                kind: .fileNotInstrumented,
+                status: .unknown,
+                confidence: .none,
+                detail: "no coverage data for \(filePath) — it likely wasn't compiled into any tested target"
+            )
+        }
+
         let candidates = regions.filter { $0.span.contains(span.start) }
-        guard let entry = candidates.max(by: { $0.span.start < $1.span.start }) else { return nil }
-        return entry.executionCount > 0
+        guard let entry = candidates.max(by: { $0.span.start < $1.span.start }) else {
+            return CoverageEvidence(
+                kind: .noMatchingRegion,
+                status: .unknown,
+                confidence: .none,
+                detail: "no coverage region contains \(Self.describe(span.start)) in \(filePath)"
+            )
+        }
+
+        let status: CoverageStatus = entry.executionCount > 0 ? .covered : .uncovered
+        let countPhrase = "executed \(entry.executionCount) time\(entry.executionCount == 1 ? "" : "s")"
+
+        if entry.span == span {
+            return CoverageEvidence(
+                kind: .directExecution,
+                status: status,
+                confidence: .high,
+                matchedRegionSpan: entry.span,
+                executionCount: entry.executionCount,
+                detail: "region \(Self.describe(entry.span)) matches this branch exactly, \(countPhrase)"
+            )
+        }
+        return CoverageEvidence(
+            kind: .inferredFromEnclosingRegion,
+            status: status,
+            confidence: .medium,
+            matchedRegionSpan: entry.span,
+            executionCount: entry.executionCount,
+            detail:
+                "inferred from enclosing region \(Self.describe(entry.span)) (branch span is \(Self.describe(span))), \(countPhrase)"
+        )
     }
 
     var isEmpty: Bool { regionsByFile.isEmpty }
+
+    private static func describe(_ position: SourcePosition) -> String {
+        "\(position.line):\(position.column)"
+    }
+
+    private static func describe(_ span: SourceSpan) -> String {
+        "[\(describe(span.start))–\(describe(span.end))]"
+    }
 }

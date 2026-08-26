@@ -34,13 +34,13 @@ public struct SwiftCoverageAnalyzer {
     }
 
     /// Cross-references already-collected logic units against a coverage
-    /// index, filling in each branch's `isCovered`.
+    /// index, filling in each branch's `evidence`.
     func resolveCoverage(units: [LogicUnit], using index: CoverageIndex) -> [LogicUnit] {
         units.map { unit in
             var unit = unit
             unit.branches = unit.branches.map { branch in
                 var branch = branch
-                branch.isCovered = index.isCovered(branch.span, in: unit.filePath)
+                branch.evidence = index.evaluate(branch.span, in: unit.filePath)
                 return branch
             }
             return unit

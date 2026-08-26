@@ -159,6 +159,13 @@ If a branch's file has no coverage data at all (most often because it wasn't com
 tested target), it's reported as uncovered too, not silently skipped — "no evidence this ran" is
 exactly the kind of gap a percentage threshold can hide.
 
+That match is heuristic, and swift-coverage says so explicitly rather than hiding it behind a bare
+`true`/`false`: every branch's JSON carries `status` (covered/uncovered/unknown), `confidence`
+(high/medium/none), and `evidence` (which of four specific things was actually found — an exact
+region match, a match inferred from an enclosing region, no matching region, or no coverage data for
+the file at all) — see [SEMANTICS.md](SEMANTICS.md) for the full breakdown of which constructs land
+on which.
+
 ## Example
 
 See `Examples/DemoPackage` for a small package with a fully-covered function, a deliberately
@@ -211,7 +218,7 @@ editors that call tools through MCP rather than a shell. It's a thin wrapper —
 
 | Tool | Runs tests? | Returns |
 |---|---|---|
-| `check_coverage` | yes (unless `skip_tests`) | The full report: `passes`, every logic unit, every branch's covered/suppressed state. |
+| `check_coverage` | yes (unless `skip_tests`) | The full report: `passes`, every logic unit, every branch's `status`/`confidence`/`evidence`/`suppressed` state (see [SEMANTICS.md](SEMANTICS.md)). |
 | `list_uncovered_branches` | yes (unless `skip_tests`) | Just the branches still needing a test — file, line, unit, label. |
 | `list_logic_units` | no | Every logic unit and its branches, parsed from source only — for previewing what a change will require coverage for. |
 

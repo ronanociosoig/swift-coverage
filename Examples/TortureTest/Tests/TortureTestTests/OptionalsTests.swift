@@ -16,6 +16,11 @@ final class OptionalsTests: XCTestCase {
         XCTAssertEqual(Optionals().firstNonNil(nil, "value"), "value")
     }
 
+    // Deliberately only the `then` side — see the doc comment on sizeLabel.
+    func testSizeLabelLargeOnly() {
+        XCTAssertEqual(Optionals().sizeLabel(true), "large")
+    }
+
     func testStreetName() {
         let withAddress = Person(address: Address(street: "Main St"))
         XCTAssertEqual(Optionals().streetName(withAddress), "Main St")
