@@ -170,12 +170,15 @@ the branch's own kind and label, meant for an agent driving a write-test/rerun l
 human reading the output:
 
 ```json
-{ "kind": "case", "branch": "case .vip", "line": 40, "column": 13,
-  "status": "uncovered", "confidence": "high", "evidence": "direct_execution",
-  "detail": "region [40:13–42:6] matches this branch exactly, executed 0 times",
+{ "branch": "case .vip", "column": 13,
+  "confidence": "medium", "evidence": "inferred_from_enclosing_region",
+  "detail": "inferred from enclosing region [39:9–40:25] (branch span is [40:13–40:25]), executed 0 times",
+  "kind": "case", "line": 40, "status": "uncovered",
   "suggestion": "Add a test calling Discount.tierName with a value matching `case .vip`.",
   "suppressed": false }
 ```
+
+(Real output from `Examples/DemoPackage`, `.sortedKeys` order — a `switch` case's confidence is always `medium` here, never `high`: its region starts at the `case` label, not the branch's own statements, so it can never be an exact-span match. See [SEMANTICS.md](SEMANTICS.md) for which constructs land on which.)
 
 ## Incremental mode: only flag new or changed logic
 
@@ -311,8 +314,12 @@ the PR's branch point):
   elsewhere needs `--include`.
 - Column matching assumes ASCII-width source lines; a branch on a line with certain wide Unicode
   characters near its start could match imprecisely.
-- The region-matching heuristic (innermost coverage region containing a branch's source position)
-  is validated against the constructs this README documents and against one real app's module so
-  far, not against a broad corpus — constructs like compound-condition short-circuiting,
-  `result builders`/`@ViewBuilder`, macros, or `if`/`guard case` patterns haven't been
-  specifically stress-tested yet.
+- The region-matching heuristic is verified against every construct in [SEMANTICS.md](SEMANTICS.md)
+  (compound conditions, `if`/`guard case`, multi-catch, a real macro, a custom `@resultBuilder`,
+  `#if`, `if #available`, ...) via a real compiled/tested fixture package, plus one real app's
+  module — not yet against a broad third-party corpus. SwiftUI's actual `@ViewBuilder` specifically
+  hasn't been verified beyond the custom-`@resultBuilder` stand-in that exercises the same compiler
+  mechanism (see SEMANTICS.md §9).
+- Diff mode (`--diff-base`) only catches a branch whose own body lines changed; modifying just a
+  condition (`if x > 5` to `if x > 10`) without touching the body isn't picked up — see
+  [Incremental mode](#incremental-mode-only-flag-new-or-changed-logic).
