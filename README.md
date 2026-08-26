@@ -5,11 +5,17 @@ A Swift CLI that makes test coverage **mandatory for logic, not for lines**.
 Tools like SonarQube report a coverage *percentage* — "80% of statements ran" — and gate CI on
 that threshold. A percentage is easy to game and easy to hide behind: one untested `case .vip`
 in a pricing switch can sit right next to ninety well-tested lines and never move the number
-enough to fail the build. `swift-coverage` instead finds every individual branch in your code —
-every `if`/`else`, `guard`, `switch` case, loop, `catch` clause, and ternary/`??` alternative —
-and fails if **any single one** of them was never reached by `swift test`. Plain data types need
-no special treatment: a struct with only stored properties has no branches, so it's never asked
-to be covered in the first place.
+enough to fail the build. `swift-coverage` instead finds every explicit alternative code path in
+your code — every `if`/`else` body, `guard`'s `else`, `switch` case, loop body, `catch` clause,
+and ternary/`??` alternative — and fails if **any single one** of them was never reached by `swift
+test`. Plain data types need no special treatment: a struct with only stored properties has no
+such paths, so it's never asked to be covered in the first place.
+
+**This is not the same claim as classical two-outcome branch coverage** — see [What this doesn't
+check](#what-this-doesnt-check-yet) below before relying on it as a completeness guarantee. Swift
+doesn't give the compiler's own coverage instrumentation the same true/false condition regions
+LLVM can produce for other frontends, so swift-coverage reconstructs a coarser but still much more
+targeted signal than a line/statement percentage from the region data Swift *does* emit.
 
 It's built for use in an agentic SDLC: a coding agent can run `swift-coverage` after writing
 tests and get a deterministic pass/fail plus a machine-readable list of exactly which logic paths
@@ -84,6 +90,27 @@ A branch inside a closure literal counts toward its *enclosing* declaration (Swi
 to make a closure its own independently-tested unit). A nested local function, computed property,
 or type gets its own logic unit and isn't double-counted.
 
+## What this doesn't check (yet)
+
+swift-coverage requires every *explicit* alternative body in your source to run — but several
+constructs have an implicit alternative that's never turned into its own obligation:
+
+- A bare `if` with no `else` — the condition-false path (skip the body entirely) isn't required.
+- `guard`'s success path — only the `else` body is required; falling through past a passing guard
+  is never separately checked.
+- Loop bodies — running at least once is required; running zero times (the loop condition false
+  on entry) is not.
+- `??` — only the fallback (right-hand side) is required; the left-hand-side-non-nil path isn't.
+- Compound conditions (`a && b`, `a || b`) — no per-operand obligation, so `a` true/`b` never
+  evaluated (short-circuit), `a` false, and both true aren't distinguished from one another.
+
+Classical branch coverage (what LLVM's own `-show-branches` gives frontends that emit branch
+regions, which Swift's compiler currently doesn't) requires both outcomes of every condition.
+swift-coverage's actual guarantee is closer to *"every alternative your source spells out was
+exercised"* — genuinely stronger than a line/statement percentage (see the `case .vip` example
+above), but not a substitute for classical branch coverage where that distinction matters, e.g. a
+compound guard condition where only one operand's failure has ever been tested.
+
 ## Marking an intentionally-untested path
 
 ```swift
@@ -153,11 +180,15 @@ swift-coverage path/to/YourPackage \
 
 This runs `xcodebuild test -scheme ... -derivedDataPath ...` instead of `swift test`, then
 extracts coverage the same way SwiftPM does under the hood: it locates the raw `Coverage.profdata`
-`xcodebuild` wrote under `-derivedDataPath`, finds the scheme's `.xctest` binary, and runs `xcrun
-llvm-cov export` against them — the exact same region-level JSON `swift test`'s own coverage
-export produces, so every downstream matching/reporting path is identical either way.
-(`xcodebuild`'s own coverage reporting, `xcrun xccov view --report --json`, is function-level only
-— too coarse for this tool's branch-level matching, which is why this doesn't just use that.)
+`xcodebuild` wrote under `-derivedDataPath`, finds every `.app`/`.framework`/`.xctest` binary built
+alongside it, and runs `xcrun llvm-cov export` against all of them together — the exact same
+region-level JSON `swift test`'s own coverage export produces, so every downstream
+matching/reporting path is identical either way. Passing every binary, not just the scheme's own
+test bundle, matters for an app-hosted test target (code under test running inside the app
+executable rather than the test bundle) or a project with dynamic frameworks — a single binary
+only reports coverage for code statically linked into it. (`xcodebuild`'s own coverage reporting,
+`xcrun xccov view --report --json`, is function-level only — too coarse for this tool's
+path-level matching, which is why this doesn't just use that.)
 
 Other options for this mode: `--xcode-project`/`--xcode-workspace` (explicit paths; omitted lets
 `xcodebuild` auto-detect), `--derived-data-path` (defaults to `<path>/.build/swift-coverage-xcode`,
@@ -207,7 +238,15 @@ runs against the same package would otherwise race on SwiftPM's shared `.build` 
 
 ## Known limitations (v1)
 
+- See [What this doesn't check](#what-this-doesnt-check-yet) — the biggest one: several implicit
+  alternative paths (bare-`if` condition-false, `guard`'s success path, loop zero-iterations,
+  `&&`/`||` per-operand outcomes, `??`'s non-nil path) aren't required, only explicit ones are.
 - Source discovery defaults to everything under `Sources/`; a package with source directories
   elsewhere needs `--include`.
 - Column matching assumes ASCII-width source lines; a branch on a line with certain wide Unicode
   characters near its start could match imprecisely.
+- The region-matching heuristic (innermost coverage region containing a branch's source position)
+  is validated against the constructs this README documents and against one real app's module so
+  far, not against a broad corpus — constructs like compound-condition short-circuiting,
+  `result builders`/`@ViewBuilder`, macros, or `if`/`guard case` patterns haven't been
+  specifically stress-tested yet.

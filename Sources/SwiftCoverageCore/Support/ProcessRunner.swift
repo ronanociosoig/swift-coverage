@@ -12,6 +12,7 @@ enum ProcessRunner {
     struct Output {
         var exitCode: Int32
         var stdout: String
+        var stderr: String
     }
 
     @discardableResult
@@ -33,18 +34,20 @@ enum ProcessRunner {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        var collected = Data()
+        var collectedOut = Data()
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
-            collected.append(chunk)
+            collectedOut.append(chunk)
             if streamOutput {
                 FileHandle.standardOutput.write(chunk)
             }
         }
+        var collectedErr = Data()
         stderrPipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
+            collectedErr.append(chunk)
             if streamOutput {
                 FileHandle.standardError.write(chunk)
             }
@@ -55,7 +58,11 @@ enum ProcessRunner {
         stdoutPipe.fileHandleForReading.readabilityHandler = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
 
-        return Output(exitCode: process.terminationStatus, stdout: String(data: collected, encoding: .utf8) ?? "")
+        return Output(
+            exitCode: process.terminationStatus,
+            stdout: String(data: collectedOut, encoding: .utf8) ?? "",
+            stderr: String(data: collectedErr, encoding: .utf8) ?? ""
+        )
     }
 
     /// Convenience for invoking a named tool (resolved via `/usr/bin/env`,
