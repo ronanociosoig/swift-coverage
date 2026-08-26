@@ -17,6 +17,12 @@ doesn't give the compiler's own coverage instrumentation the same true/false con
 LLVM can produce for other frontends, so swift-coverage reconstructs a coarser but still much more
 targeted signal than a line/statement percentage from the region data Swift *does* emit.
 
+For the exact, construct-by-construct contract — `&&`/`||`, `if case`, `guard case let`, `switch`
+with `where` clauses and comma patterns, multi-catch, `defer`, loops, chained `??`, result builders
+(`@ViewBuilder`), real macro expansions, `#if`, `if #available` — see **[SEMANTICS.md](SEMANTICS.md)**.
+Every claim there is checked against `swift-coverage`'s actual output on a real, compiled, tested
+fixture package (`Examples/TortureTest`), not just asserted.
+
 It's built for use in an agentic SDLC: a coding agent can run `swift-coverage` after writing
 tests and get a deterministic pass/fail plus a machine-readable list of exactly which logic paths
 still need a test — not a percentage it has to interpret.
